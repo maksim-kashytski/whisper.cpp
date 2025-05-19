@@ -48,7 +48,8 @@ jobs:
         id: cmake_build
         run: |
          sysctl -a
-          cmake -B build -DBUILD_SHARED_LIBS=OF
+          cmake -B build \
+            -DBUILD_SHARED_LIBS=OFF
           cmake --build build --config Release -j $(sysctl -n hw.logicalcpu)
 
       - name: Determine tag name
