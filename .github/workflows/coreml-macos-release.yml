@@ -48,8 +48,25 @@ jobs:
 
       - name: Build whisper.cpp with Core ML
         run: |
-          cmake -B build -DWHISPER_COREML=1
+          cmake -B build -DWHISPER_COREML=1 \
+            -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DWHISPER_BUILD_EXAMPLES=OFF \
+            -DWHISPER_BUILD_TESTS=OFF
           cmake --build build -j --config Release --target whisper-cli whisper-server
+
+      - name: Collect dylibs and fix rpath
+        run: |
+          mkdir -p dist/lib
+          find build -name "*.dylib" -maxdepth 6 -print -exec cp "{}" dist/lib/ \;
+
+          for dylib in dist/lib/*.dylib; do
+            install_name_tool -id "@rpath/$(basename "$dylib")" "$dylib" || true
+          done
+
+          install_name_tool -add_rpath "@executable_path/../lib" build/bin/whisper-cli
+          if [ -f build/bin/whisper-server ]; then
+            install_name_tool -add_rpath "@executable_path/../lib" build/bin/whisper-server
+          fi
 
       - name: Package artifacts
         run: |
