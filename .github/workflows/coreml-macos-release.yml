@@ -1,0 +1,72 @@
+name: CoreML macOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag (e.g. coreml-v1.8.3)"
+        required: true
+        type: string
+      model:
+        description: "Whisper model name (e.g. base.en, small.en)"
+        required: false
+        default: "base.en"
+
+permissions:
+  contents: write
+
+jobs:
+  build-coreml-macos:
+    runs-on: macos-14
+    env:
+      MODEL_NAME: ${{ inputs.model }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: |
+          brew install cmake
+
+      - name: Install Core ML deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ane_transformers openai-whisper coremltools
+
+      - name: Generate Core ML model
+        run: |
+          ./models/generate-coreml-model.sh "${MODEL_NAME}"
+
+      - name: Build whisper.cpp with Core ML
+        run: |
+          cmake -B build -DWHISPER_COREML=1
+          cmake --build build -j --config Release --target whisper-cli whisper-server
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist/bin dist/models
+          cp build/bin/whisper-cli dist/bin/
+          if [ -f build/bin/whisper-server ]; then
+            cp build/bin/whisper-server dist/bin/
+          fi
+          cp "models/ggml-${MODEL_NAME}.bin" dist/models/
+          cp -R "models/ggml-${MODEL_NAME}-encoder.mlmodelc" dist/models/
+          tar -czf "whispercpp-coreml-macos-arm64-${MODEL_NAME}.tar.gz" -C dist .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whispercpp-coreml-macos-arm64-${{ inputs.model }}
+          path: whispercpp-coreml-macos-arm64-${{ inputs.model }}.tar.gz
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          name: ${{ inputs.tag_name }}
+          files: whispercpp-coreml-macos-arm64-${{ inputs.model }}.tar.gz
